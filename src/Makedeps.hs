@@ -14,14 +14,27 @@ option.
 
 This module provides a parsec parser and datatypes for working with the
 subset of Makefile syntax necessary to support this output.
+
+Useful references:
+
+* Posix makefile spec: <http://pubs.opengroup.org/onlinepubs/009695399/utilities/make.html>
 -}
 module Makedeps (
     DepSpec(..),
     parseDeps
 ) where
 
-import Text.ParserCombinators.Parsec (Parser,oneOf,string,many)
+import Text.ParserCombinators.Parsec (
+    Parser,
+    char,
+    digit,
+    letter,
+    many,
+    many1,
+    oneOf,
+    string)
 import Control.Applicative ((<|>),(<*))
+import Control.Monad (void)
 
 -- TODO: we should add more context to the above; explain the file format a
 -- little bit, for example.
@@ -34,15 +47,31 @@ data DepSpec = DepSpec { targets      :: [String]
                        }
 
 -- whitespace other than a line break:
-lineWS :: Parser Char
-lineWS = oneOf " \t\f" <|> string "\\\n"
+lineWS :: Parser ()
+lineWS = void (oneOf " \t\f") <|> void (string "\\\n")
 
 token :: Parser a -> Parser a
 token p = p <* many lineWS
 
 colon = token (string ":")
 
-targetName :: Parser String
-parseDepSpec :: Parser DepSpec
+-- | Parser for a legal character in a target name. Posix only allows
+-- @letter <|> digit <|> oneOf "._"@, but we also allow slashes (@'/'@),
+-- since many tools generate that. We probablly should support more than
+-- this, but researching exactly what is still TODO
+targetChar :: Parser Char
+targetChar = letter <|> digit <|> oneOf "._/"
 
-parseDeps :: Parser DepSpec
+targetName :: Parser String
+targetName = token (many1 targetChar)
+
+parseDepSpec :: Parser DepSpec
+parseDepSpec = do
+    targs <- many1 targetName
+    colon
+    deps <- many1 targetName
+    char '\n'
+    return $ DepSpec targs deps
+
+parseDeps :: Parser [DepSpec]
+parseDeps = many parseDepSpec
